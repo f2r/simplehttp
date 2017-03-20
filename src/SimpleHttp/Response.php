@@ -27,7 +27,7 @@ class Response
 
     public function getCurlInfo()
     {
-        $this->curlInfo;
+        return $this->curlInfo;
     }
 
     public function getHttpCode()
