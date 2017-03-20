@@ -1,0 +1,22 @@
+{
+  "name": "f2r/simplehttp",
+  "description": "Simple HTTP Client",
+  "minimum-stability": "dev",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Frederic Bouchery",
+      "email": "frederic@bouchery.fr"
+    }
+  ],
+  "require": {
+    "php": ">= 5.5",
+    "ext-curl": "*",
+    "psr/log": "^1.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "f2r\\SimpleHttp\\": "src/SimpleHttp/"
+    }
+  }
+}
