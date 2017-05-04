@@ -315,7 +315,7 @@ class Client
 
     private function throwOnInvalideCharacter($url)
     {
-        if (preg_match('`[\x00-\x20\x22\x3c\3e\x5c\x5e\x60\x7b-\x7d\x7f-\xff]`', $url, $match) === 1) {
+        if (preg_match('`[\x00-\x20\x22\x3c\x3e\x5c\x5e\x60\x7b-\x7d\x7f-\xff]`', $url, $match) === 1) {
             throw new Exception(sprintf('Invalid character in URL: \\x%02X', ord($match[0])));
         }
     }
