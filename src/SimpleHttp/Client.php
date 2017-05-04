@@ -79,13 +79,15 @@ class Client
 
     /**
      * @param \f2r\SimpleHttp\HeaderRequest|null $header
+     * @return $this
      */
     public function setHeader(HeaderRequest $header = null)
     {
-        $this->header = $header;
-        if ($this->header === null) {
-            $this->header = new HeaderRequest();
+        if ($header === null) {
+            $header = new HeaderRequest();
         }
+        $this->header = $header;
+        return $this;
     }
 
     /**
