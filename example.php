@@ -1,7 +1,14 @@
 <?php
 require 'vendor/autoload.php';
 
-$client = new f2r\SimpleHttp\Client();
-$response = $client->get('https://raw.githubusercontent.com/f2r/simplehttp/master/README.md');
+$url = 'http://[::ffff:7f00:0001]/';
 
-echo $response->getBody(), "\n";
+$client = new f2r\SimpleHttp\Client();
+$client->getOptions()->setSafeRequest();
+try {
+    $response = $client->get($url);
+} catch (Exception $e) {
+    die($e->getMessage() . "\n");
+}
+
+echo "URL $url requested. HTTP code: ", $response->getHttpCode(), "\n";

@@ -13,7 +13,7 @@ class HeaderRequest
         $this->cookies = $cookies;
     }
 
-    public function addHeader($name, $value)
+    public function addField($name, $value)
     {
         $this->headers[strtolower($name)] = $value;
         return $this;

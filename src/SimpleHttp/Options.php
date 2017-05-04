@@ -40,6 +40,11 @@ class Options
      */
     private $logger;
 
+    /**
+     * @var bool
+     */
+    private $safeRequest;
+
     public function __construct()
     {
         $this->connectionTimeout = static::DEFAULT_CONNECTION_TIMEOUT;
@@ -47,6 +52,7 @@ class Options
         $this->followRedirectCount = static::DEFAULT_FOLLOW_REDIRECT_COUNT;
         $this->hostsBlackList = [];
         $this->logger = new NullLogger();
+        $this->safeRequest = false;
     }
 
     /**
@@ -122,7 +128,7 @@ class Options
      */
     public function setConnectionTimeout($timeout)
     {
-        $this->connectionTimeout = $timeout;
+        $this->connectionTimeout = (int)$timeout;
         return $this;
     }
 
@@ -140,7 +146,7 @@ class Options
      */
     public function setTimeout($timeout)
     {
-        $this->timeout = $timeout;
+        $this->timeout = (int)$timeout;
         return $this;
     }
 
@@ -168,5 +174,23 @@ class Options
     public function getLogger()
     {
         return $this->logger;
+    }
+
+    /**
+     * @param bool $safe
+     * @return $this
+     */
+    public function setSafeRequest($safe = true)
+    {
+        $this->safeRequest = $safe;
+        return $this;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isSafeRequest()
+    {
+        return $this->safeRequest;
     }
 }

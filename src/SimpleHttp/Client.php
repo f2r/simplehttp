@@ -3,7 +3,6 @@ namespace f2r\SimpleHttp;
 
 use f2r\SimpleHttp\Data\Payload;
 use f2r\SimpleHttp\Data\Post;
-use Psr\Log\LoggerInterface;
 
 class Client
 {
@@ -59,10 +58,10 @@ class Client
      */
     public function setOptions(Options $options = null)
     {
-        $this->options = $options;
-        if ($this->options === $options) {
-            $this->options = new Options();
+        if ($options === null) {
+            $options = new Options();
         }
+        $this->options = $options;
         return $this;
     }
 
@@ -223,24 +222,26 @@ class Client
      */
     private function executeCurl($url, array $curlOpt)
     {
-        /** @var LoggerInterface $logger */
-        $logger = $this->getOptions()->getLogger();
         $response = null;
         if (static::$debugHook !== null) {
             $response = call_user_func(static::$debugHook, $url, $curlOpt);
         }
-        if ($response instanceof Response) {
-            $logger->debug('Debug hook return a response for URL: ' . $url);
+
+        if ($response !== null) {
             return $response;
         }
+
+        $logger = $this->getOptions()->getLogger();
+        $logMessage = 'Request URL: ';
         $redirectCount = $this->options->getFollowRedirectCount();
         $ch = curl_init();
         curl_setopt_array($ch, $curlOpt);
-        $logMessage = 'Request URL: ';
         do {
             $this->throwOnForbiddenHost($url);
+            $this->throwOnInvalideCharacter($url);
             curl_setopt($ch, CURLOPT_URL, $url);
             $logger->debug($logMessage . $url);
+            $this->throwOnUnsafeRequest($ch);
             $raw = curl_exec($ch);
             $info = curl_getinfo($ch);
             $error = curl_error($ch);
@@ -253,6 +254,53 @@ class Client
         return $this->processHeaderBody($raw, $info);
     }
 
+    private function throwOnUnsafeRequest($ch)
+    {
+        if ($this->options->isSafeRequest() === false) {
+            return;
+        }
+        curl_setopt($ch, CURLOPT_CONNECT_ONLY, true);
+        curl_exec($ch);
+        $ip = curl_getinfo($ch, CURLINFO_PRIMARY_IP);
+        $ip = preg_replace('`(?<=^|:)0(?=:|$)`', '', $ip);
+        try {
+            if (stripos($ip, 'fd') === 0) {
+                throw new Exception('Private IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+            }
+            if (stripos($ip, 'fc') === 0) {
+                throw new Exception('Local IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+            }
+            if (stripos($ip, 'fe80') === 0) {
+                throw new Exception('Local link IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+            }
+            if ($ip === '::1') {
+                throw new Exception('Loop back IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+            }
+
+            $ipv6Message = '';
+            if (preg_match('`^::ffff:([^:]+):([^:]+)`', $ip, $match) === 1) {
+                $parts = str_split(str_pad($match[1], 4, '0', STR_PAD_LEFT) . str_pad($match[2], 4, '0', STR_PAD_LEFT), 2);
+                foreach ($parts as $i => $h) {
+                    $parts[$i] = base_convert($h, 16, 10);
+                }
+                $ip = implode('.', $parts);
+                $ipv6Message = ' mapped into IPV6';
+            }
+            if (preg_match('`^::ffff:(\d+\.\d+\.\d+\.\d+)`', $ip, $match) === 1) {
+                $ip = $match[1];
+                $ipv6Message = ' mapped into IPV6';
+            }
+            if (preg_match('`^(10|192\.168|172\.1[6-9]|172\.2\d|172\.3[0-1])\.`', $ip)) {
+                throw new Exception("Private IPV4 network requested$ipv6Message: " . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+            }
+            if (strpos($ip, '127.') === 0) {
+                throw new Exception("Local IPV4 network requested$ipv6Message: " . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+            }
+        } finally {
+            curl_setopt($ch, CURLOPT_CONNECT_ONLY, false);
+        }
+    }
+
     /**
      * @param string $url
      * @throws \f2r\SimpleHttp\Exception
@@ -262,6 +310,13 @@ class Client
         $host = parse_url($url, PHP_URL_HOST);
         if ($this->options->isHostValid($host) === false) {
             throw new Exception('Invalid host for requesting: ' . $host, 0);
+        }
+    }
+
+    private function throwOnInvalideCharacter($url)
+    {
+        if (preg_match('`[\x00-\x20\x22\x3c\3e\x5c\x5e\x60\x7b-\x7d\x7f-\xff]`', $url, $match) === 1) {
+            throw new Exception(sprintf('Invalid character in URL: \\x%02X', ord($match[0])));
         }
     }
 
