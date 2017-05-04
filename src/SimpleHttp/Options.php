@@ -182,7 +182,7 @@ class Options
      */
     public function setSafeRequest($safe = true)
     {
-        $this->safeRequest = $safe;
+        $this->safeRequest = (bool)$safe;
         return $this;
     }
 
