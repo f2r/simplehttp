@@ -5,8 +5,10 @@ use f2r\SimpleHttp\Data\Payload;
 use f2r\SimpleHttp\Data\Post;
 use f2r\SimpleHttp\Exception\ForbiddenHostException;
 use f2r\SimpleHttp\Exception\HttpErrorException;
+use f2r\SimpleHttp\Exception\HttpMethodNotSupportedException;
 use f2r\SimpleHttp\Exception\InvalidCharacterException;
 use f2r\SimpleHttp\Exception\SafeRequestException;
+use f2r\SimpleHttp\Exception\UnknownHttpErrorException;
 
 class Client
 {
@@ -110,15 +112,29 @@ class Client
             CURLOPT_HEADER => true
         ];
 
-        if ($method !== self::METHOD_GET) {
-            $curlOpt[CURLOPT_CUSTOMREQUEST] = $method;
+        switch ($method) {
+            case self::METHOD_DELETE:
+                $curlOpt[CURLOPT_CUSTOMREQUEST] = self::METHOD_DELETE;
+                $data = null;
+                break;
+            case self::METHOD_HEAD:
+                $curlOpt[CURLOPT_CUSTOMREQUEST] = self::METHOD_HEAD;
+                $data = null;
+                break;
+            case self::METHOD_GET:
+                $data = null;
+                break;
+            case self::METHOD_PUT:
+                $curlOpt[CURLOPT_CUSTOMREQUEST] = self::METHOD_PUT;
+                break;
+            case self::METHOD_POST:
+                $curlOpt[CURLOPT_POST] = true;
+                break;
+            default:
+                throw new HttpMethodNotSupportedException($method . ' HTTP method is not currently supported');
         }
 
-        if ($method === static::METHOD_GET || $method === self::METHOD_HEAD || $method === self::METHOD_DELETE) {
-            $data = null;
-        }
-
-        if ($data instanceof DataInterface) {
+        if ($data !== null) {
             $payload = $data->getPayload();
             $curlOpt[CURLOPT_POSTFIELDS] = $payload;
             $curlOpt[CURLOPT_HTTPHEADER]['content-length'] = $this->getStrLen($payload);
@@ -201,12 +217,12 @@ class Client
     {
         if ($error !== '') {
             $this->getOptions()->getLogger()->debug('Error requesting "' . $url . '": ' . $error);
-            throw new Exception($error, 0);
+            throw new UnknownHttpErrorException($error);
         }
 
         if (preg_match('`^HTTP/\d+\.\d+\s+(\d+)\s+(.+)`', $raw, $match) === 0) {
             $this->getOptions()->getLogger()->debug('Could not understand HTTP response for URL: ' . $url);
-            throw new Exception('Could not understand HTTP response', 0);
+            throw new UnknownHttpErrorException('Could not understand HTTP response');
         }
 
         $httpCode = (int)$match[1];
