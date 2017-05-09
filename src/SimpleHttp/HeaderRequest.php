@@ -26,9 +26,9 @@ class HeaderRequest
             $headers[] = $name . ': ' . $value;
         }
         if ($this->cookies !== []) {
-            $headers[] = 'cookie: ' . implode(';', $this->cookies);
+            $headers[] = 'cookie: ' . http_build_query($this->cookies, null, '; ');
         }
-        if (isset($headers['user-agent']) === false) {
+        if (isset($this->headers['user-agent']) === false) {
             $headers[] = 'user-agent: ' . static::DEFAULT_USER_AGENT;
         }
         return $headers;
@@ -49,6 +49,20 @@ class HeaderRequest
     public function setUserAgent($userAgent)
     {
         $this->headers['user-agent'] = $userAgent;
+        return $this;
+    }
+
+    public function setIfModifiedSince(\DateTime $dateTime)
+    {
+        $tz = new \DateTimeZone('+0');
+        $dateTime->setTimezone($tz);
+        $this->headers['if-modified-since'] = $dateTime->format('D, d M Y H:i:s') . ' GMT';
+        return $this;
+    }
+
+    public function setNoCache()
+    {
+        $this->headers['cache-control'] = 'no-cache';
         return $this;
     }
 }

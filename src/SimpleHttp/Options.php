@@ -1,6 +1,7 @@
 <?php
 namespace f2r\SimpleHttp;
 
+use f2r\SimpleHttp\Exception\HostPatternException;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -51,33 +52,46 @@ class Options
         $this->timeout = static::DEFAULT_TIMEOUT;
         $this->followRedirectCount = static::DEFAULT_FOLLOW_REDIRECT_COUNT;
         $this->hostsBlackList = [];
+        $this->hostsWhiteList = [];
         $this->logger = new NullLogger();
         $this->safeRequest = false;
     }
 
-    /**
-     * @param string|array $regexp
-     * @return $this
-     */
-    public function addHostWhiteList($regexp)
+    private function hostPattern($pattern, $isRegexp)
     {
-        if ($this->hostsWhiteList === null) {
-            $this->hostsWhiteList = [];
+        if ($isRegexp === false) {
+            $pattern = '`^' . preg_quote($pattern, '`') . '$`i';
         }
-        foreach ((array)$regexp as $pattern) {
-            $this->hostsWhiteList[] = $pattern;
+        if (@preg_match($pattern, '') === false) {
+            throw new HostPatternException('Regexp pattern error: ' . $pattern);
+        }
+        return $pattern;
+    }
+
+    /**
+     * @param      $host
+     * @param bool $isRegexp
+     * @return $this
+     * @internal param array|string $regexp
+     */
+    public function addHostWhiteList($host, $isRegexp = false)
+    {
+        foreach ((array)$host as $pattern) {
+            $this->hostsWhiteList[] = $this->hostPattern($pattern, $isRegexp);
         }
         return $this;
     }
 
     /**
-     * @param string|array $regexp
+     * @param      $host
+     * @param bool $isRegexp
      * @return $this
+     * @internal param array|string $regexp
      */
-    public function addHostBlackList($regexp)
+    public function addHostBlackList($host, $isRegexp = false)
     {
-        foreach ((array)$regexp as $pattern) {
-            $this->hostsBlackList[] = $pattern;
+        foreach ((array)$host as $pattern) {
+            $this->hostsBlackList[] = $this->hostPattern($pattern, $isRegexp);
         }
         return $this;
     }
@@ -93,7 +107,7 @@ class Options
                 return false;
             }
         }
-        if ($this->hostsWhiteList === null) {
+        if ($this->hostsWhiteList === []) {
             return true;
         }
         foreach ($this->hostsWhiteList as $pattern) {

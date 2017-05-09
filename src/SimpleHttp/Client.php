@@ -3,12 +3,7 @@ namespace f2r\SimpleHttp;
 
 use f2r\SimpleHttp\Data\Payload;
 use f2r\SimpleHttp\Data\Post;
-use f2r\SimpleHttp\Exception\ForbiddenHostException;
-use f2r\SimpleHttp\Exception\HttpErrorException;
-use f2r\SimpleHttp\Exception\HttpMethodNotSupportedException;
-use f2r\SimpleHttp\Exception\InvalidCharacterException;
-use f2r\SimpleHttp\Exception\SafeRequestException;
-use f2r\SimpleHttp\Exception\UnknownHttpErrorException;
+use f2r\SimpleHttp\Exception;
 
 class Client
 {
@@ -131,7 +126,7 @@ class Client
                 $curlOpt[CURLOPT_POST] = true;
                 break;
             default:
-                throw new HttpMethodNotSupportedException($method . ' HTTP method is not currently supported');
+                throw new Exception\HttpMethodNotSupportedException($method . ' HTTP method is not currently supported');
         }
 
         if ($data !== null) {
@@ -217,12 +212,12 @@ class Client
     {
         if ($error !== '') {
             $this->getOptions()->getLogger()->debug('Error requesting "' . $url . '": ' . $error);
-            throw new UnknownHttpErrorException($error);
+            throw new Exception\UnknownHttpErrorException($error);
         }
 
         if (preg_match('`^HTTP/\d+\.\d+\s+(\d+)\s+(.+)`', $raw, $match) === 0) {
             $this->getOptions()->getLogger()->debug('Could not understand HTTP response for URL: ' . $url);
-            throw new UnknownHttpErrorException('Could not understand HTTP response');
+            throw new Exception\UnknownHttpErrorException('Could not understand HTTP response');
         }
 
         $httpCode = (int)$match[1];
@@ -233,7 +228,7 @@ class Client
         }
 
         $this->getOptions()->getLogger()->debug("Request error for URL \"$url\": [$httpCode] $httpMessage");
-        throw new HttpErrorException($httpMessage, $httpCode);
+        throw new Exception\HttpErrorException($httpMessage, $httpCode);
     }
 
     /**
@@ -253,6 +248,7 @@ class Client
             return $response;
         }
 
+        $originalUrl = $url;
         $logger = $this->getOptions()->getLogger();
         $logMessage = 'Request URL: ';
         $redirectCount = $this->options->getFollowRedirectCount();
@@ -273,6 +269,11 @@ class Client
         } while ($url !== '' and $redirectCount-- > 0);
         curl_close($ch);
 
+        if ($url !== '' and $redirectCount <= 0) {
+            throw new Exception\TooManyRedirectionsException(
+                'Too many redirections (max ' . $this->options->getFollowRedirectCount() . ') for URL: ' . $originalUrl
+            );
+        }
         return $this->processHeaderBody($raw, $info);
     }
 
@@ -288,19 +289,19 @@ class Client
         curl_setopt($ch, CURLOPT_CONNECT_ONLY, true);
         curl_exec($ch);
         $ip = curl_getinfo($ch, CURLINFO_PRIMARY_IP);
-        $ip = preg_replace('`(?<=^|:)0(?=:|$)`', '', $ip);
+        $ip = preg_replace('`(?<=^|:)0+(?=:|$)`', '', $ip);
         try {
             if (stripos($ip, 'fd') === 0) {
-                throw new SafeRequestException('Private IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+                throw new Exception\SafeRequestException('Private IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
             }
             if (stripos($ip, 'fc') === 0) {
-                throw new SafeRequestException('Local IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+                throw new Exception\SafeRequestException('Local IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
             }
             if (stripos($ip, 'fe80') === 0) {
-                throw new SafeRequestException('Local link IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+                throw new Exception\SafeRequestException('Local link IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
             }
             if ($ip === '::1') {
-                throw new SafeRequestException('Loop back IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+                throw new Exception\SafeRequestException('Loop back IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
             }
 
             $ipv6Message = '';
@@ -317,10 +318,10 @@ class Client
                 $ipv6Message = ' mapped into IPV6';
             }
             if (preg_match('`^(10|192\.168|172\.1[6-9]|172\.2\d|172\.3[0-1])\.`', $ip)) {
-                throw new SafeRequestException("Private IPV4 network requested$ipv6Message: " . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+                throw new Exception\SafeRequestException("Private IPV4 network requested$ipv6Message: " . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
             }
             if (strpos($ip, '127.') === 0) {
-                throw new SafeRequestException("Local IPV4 network requested$ipv6Message: " . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+                throw new Exception\SafeRequestException("Local IPV4 network requested$ipv6Message: " . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
             }
         } finally {
             curl_setopt($ch, CURLOPT_CONNECT_ONLY, false);
@@ -335,7 +336,7 @@ class Client
     {
         $host = parse_url($url, PHP_URL_HOST);
         if ($this->options->isHostValid($host) === false) {
-            throw new ForbiddenHostException('Invalid host for requesting: ' . $host, 0);
+            throw new Exception\ForbiddenHostException('Invalid host for requesting: ' . $host, 0);
         }
     }
 
@@ -346,7 +347,7 @@ class Client
     private function throwOnInvalidCharacter($url)
     {
         if (preg_match('`[\x00-\x20\x22\x3c\x3e\x5c\x5e\x60\x7b-\x7d\x7f-\xff]`', $url, $match) === 1) {
-            throw new InvalidCharacterException(sprintf('Invalid character in URL: \\x%02X', ord($match[0])));
+            throw new Exception\InvalidCharacterException(sprintf('Invalid character in URL: \\x%02X', ord($match[0])));
         }
     }
 
