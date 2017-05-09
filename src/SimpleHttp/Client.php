@@ -90,12 +90,12 @@ class Client
     /**
      * @param string                             $method
      * @param string                            $url
-     * @param \f2r\SimpleHttp\DataInterface|null $data
+     * @param array|string|null $data
      * @return \f2r\SimpleHttp\Response
      *
      * @throws Exception
      */
-    public function request($method, $url, DataInterface $data = null)
+    public function request($method, $url, $data = null)
     {
         $curlOpt = [
             CURLOPT_RETURNTRANSFER => true,
@@ -121,18 +121,16 @@ class Client
                 break;
             case self::METHOD_PUT:
                 $curlOpt[CURLOPT_CUSTOMREQUEST] = self::METHOD_PUT;
+                $curlOpt[CURLOPT_SAFE_UPLOAD] = true;
+                $curlOpt[CURLOPT_POSTFIELDS] = $data;
                 break;
             case self::METHOD_POST:
+                $curlOpt[CURLOPT_SAFE_UPLOAD] = true;
                 $curlOpt[CURLOPT_POST] = true;
+                $curlOpt[CURLOPT_POSTFIELDS] = $data;
                 break;
             default:
                 throw new Exception\HttpMethodNotSupportedException($method . ' HTTP method is not currently supported');
-        }
-
-        if ($data !== null) {
-            $payload = $data->getPayload();
-            $curlOpt[CURLOPT_POSTFIELDS] = $payload;
-            $curlOpt[CURLOPT_HTTPHEADER]['content-length'] = $this->getStrLen($payload);
         }
 
         return $this->executeCurl($url, $curlOpt);
@@ -191,16 +189,31 @@ class Client
     }
 
     /**
-     * @param string $payload
-     * @return int
+     * @param string        $url
+     * @param string|array  $files
+     * @param array         $additionalData
+     * @return \f2r\SimpleHttp\Response
+     * @throws \Exception
+     * @throws \f2r\SimpleHttp\Exception\UploadException
      */
-    private function getStrLen($payload)
+    public function uploadFile($url, $files, array $additionalData = [])
     {
-        if (function_exists('mb_strlen')) {
-            // strlen could return wrong data length with "mbstring.func_overload"
-            return mb_strlen($payload, '8bit');
+        if (is_string($files)) {
+            $files = ['file' => $files];
+        } elseif (is_array($files) === false) {
+            throw new \Exception('$files parameter must be a string or an array, ' . gettype($files) . ' given');
         }
-        return strlen($payload);
+        foreach ($files as $name => $file) {
+            if (file_exists($file) === false) {
+                throw new Exception\UploadException('File does not exist: ' . $file);
+            }
+            if (is_readable($file) === false) {
+                throw new Exception\UploadException('File is not readable: ' . $file);
+            }
+            $files[$name] = new \CURLFile($file);
+            $files[$name]->setMimeType(mime_content_type($file));
+        }
+        return $this->request(self::METHOD_POST, $url, $files + $additionalData);
     }
 
     /**
@@ -263,6 +276,8 @@ class Client
             $raw = curl_exec($ch);
             $info = curl_getinfo($ch);
             $error = curl_error($ch);
+            // remove "continue" header
+            $raw = preg_replace('`^HTTP/\d+\.\d+\s+100\s+.*\s+`', '', $raw);
             $this->throwOnError($error, $raw, $url);
             $url = $info['redirect_url'];
             $logMessage = 'Redirect URL: ';

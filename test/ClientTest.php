@@ -66,10 +66,31 @@ function curl_close($ch)
 
 class ClientTest extends \PHPUnit_Framework_TestCase
 {
-    public function testGet()
+    private $httpResponse = null;
+    private $httpCode = 200;
+    private $client = null;
+
+
+    public function setUp()
     {
         CurlMock::getInstance()->setCallback('curl_init', function() {
             return 42;
+        });
+        CurlMock::getInstance()->setCallback('curl_getinfo', function($ch) {
+            $this->assertEquals(42, $ch);
+            return [
+                'redirect_url' => '',
+                'http_code' => $this->httpCode
+            ];
+        });
+        CurlMock::getInstance()->setCallback('curl_error', function($ch) {
+            $this->assertEquals(42, $ch);
+            return '';
+        });
+
+        CurlMock::getInstance()->setCallback('curl_exec', function($ch) {
+            $this->assertEquals(42, $ch);
+            return $this->httpResponse;
         });
         CurlMock::getInstance()->setCallback('curl_setopt_array', function($ch, $args) {
             $this->assertEquals(42, $ch);
@@ -89,20 +110,7 @@ class ClientTest extends \PHPUnit_Framework_TestCase
                 $this->assertEquals('http://test', $value);
             }
         });
-        CurlMock::getInstance()->setCallback('curl_exec', function($ch) {
-            $this->assertEquals(42, $ch);
-            return "HTTP/1.1 200 OK\r\n\r\nbody content";
-        });
-        CurlMock::getInstance()->setCallback('curl_getinfo', function($ch) {
-            $this->assertEquals(42, $ch);
-            return [
-                'redirect_url' => ''
-            ];
-        });
-        CurlMock::getInstance()->setCallback('curl_error', function($ch) {
-            $this->assertEquals(42, $ch);
-            return '';
-        });
+
         $options = new Options();
         $options->setConnectionTimeout(120);
         $options->setTimeout(300);
@@ -110,8 +118,23 @@ class ClientTest extends \PHPUnit_Framework_TestCase
 
         $header = new HeaderRequest();
         $header->setUserAgent('phpunit');
+        $this->client = new Client($header, $options);
+    }
 
-        $client = new Client($header, $options);
-        $client->get('http://test');
+    public function testGet()
+    {
+        $this->httpResponse = "HTTP/1.1 200 OK\r\n\r\nbody content";
+
+        $response = $this->client->get('http://test');
+        $this->assertEquals(200, $response->getHttpCode());
+        $this->assertEquals('body content', $response->getBody());
+    }
+
+    public function testContinueHeader()
+    {
+        $this->httpResponse = "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\n\r\nbody content";
+        $response = $this->client->get('http://test');
+        $this->assertEquals(200, $response->getHttpCode());
+        $this->assertEquals('body content', $response->getBody());
     }
 }
