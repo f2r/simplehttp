@@ -1,10 +1,6 @@
 <?php
 namespace f2r\SimpleHttp;
 
-use f2r\SimpleHttp\Data\Payload;
-use f2r\SimpleHttp\Data\Post;
-use f2r\SimpleHttp\Exception;
-
 class Client
 {
     const METHOD_GET = 'GET';
@@ -122,12 +118,15 @@ class Client
             case self::METHOD_PUT:
                 $curlOpt[CURLOPT_CUSTOMREQUEST] = self::METHOD_PUT;
                 $curlOpt[CURLOPT_SAFE_UPLOAD] = true;
-                $curlOpt[CURLOPT_POSTFIELDS] = $data;
+                if (is_array($data)) {
+                    $data = http_build_query($data);
+                }
+                $curlOpt[CURLOPT_POSTFIELDS] = (string)$data;
                 break;
             case self::METHOD_POST:
                 $curlOpt[CURLOPT_SAFE_UPLOAD] = true;
                 $curlOpt[CURLOPT_POST] = true;
-                $curlOpt[CURLOPT_POSTFIELDS] = $data;
+                $curlOpt[CURLOPT_POSTFIELDS] = $this->buildData($data);
                 break;
             default:
                 throw new Exception\HttpMethodNotSupportedException($method . ' HTTP method is not currently supported');
@@ -154,7 +153,7 @@ class Client
      */
     public function post($url, array $data = [])
     {
-        return $this->request(self::METHOD_POST, $url, new Post($data));
+        return $this->request(self::METHOD_POST, $url, $data);
     }
 
     /**
@@ -163,9 +162,9 @@ class Client
      * @return \f2r\SimpleHttp\Response
      * @throws Exception
      */
-    public function put($url, $data)
+    public function put($url, $data = null)
     {
-        return $this->request(self::METHOD_PUT, $url, new Payload($data));
+        return $this->request(self::METHOD_PUT, $url, $data);
     }
 
     /**
@@ -268,6 +267,7 @@ class Client
         $ch = curl_init();
         curl_setopt_array($ch, $curlOpt);
         do {
+            $this->throwOnForbiddenProtocol($url);
             $this->throwOnForbiddenHost($url);
             $this->throwOnInvalidCharacter($url);
             curl_setopt($ch, CURLOPT_URL, $url);
@@ -277,7 +277,7 @@ class Client
             $info = curl_getinfo($ch);
             $error = curl_error($ch);
             // remove "continue" header
-            $raw = preg_replace('`^HTTP/\d+\.\d+\s+100\s+.*\s+`', '', $raw);
+            $raw = preg_replace('`^HTTP/\d+\.\d+\s+100\s+.*\s+`m', '', $raw);
             $this->throwOnError($error, $raw, $url);
             $url = $info['redirect_url'];
             $logMessage = 'Redirect URL: ';
@@ -345,6 +345,17 @@ class Client
 
     /**
      * @param string $url
+     * @throws \f2r\SimpleHttp\Exception\ForbiddenProtocolException
+     */
+    private function throwOnForbiddenProtocol($url)
+    {
+        if (preg_match('`^https?://`i', $url) === 0) {
+            throw new Exception\ForbiddenProtocolException('unsupported protocol scheme: ' . $url);
+        }
+    }
+
+    /**
+     * @param string $url
      * @throws \f2r\SimpleHttp\Exception\ForbiddenHostException
      */
     private function throwOnForbiddenHost($url)
@@ -366,6 +377,18 @@ class Client
         }
     }
 
+    private function buildData($data)
+    {
+        if (is_array($data) and $this->options->isPostAsMultipart()) {
+            return $data;
+        }
+        if (is_array($data)) {
+            return http_build_query($data);
+        }
+
+        return (string)$data;
+    }
+
     /**
      * @param string $raw
      * @param array  $info
@@ -373,7 +396,12 @@ class Client
      */
     private function processHeaderBody($raw, array $info)
     {
-        list ($header, $body) = explode("\r\n\r\n", $raw, 2);
+        $split = explode("\r\n\r\n", $raw, 2);
+        $header = $split[0];
+        $body = '';
+        if (isset($split[1])) {
+            $body = $split[1];
+        }
         $headerLines = explode("\r\n", trim($header));
         unset($headerLines[0]);
         $header = [];

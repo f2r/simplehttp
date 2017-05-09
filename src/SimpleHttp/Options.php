@@ -46,6 +46,11 @@ class Options
      */
     private $safeRequest;
 
+    /**
+     * @var bool
+     */
+    private $postAsMultipart;
+
     public function __construct()
     {
         $this->connectionTimeout = static::DEFAULT_CONNECTION_TIMEOUT;
@@ -55,6 +60,7 @@ class Options
         $this->hostsWhiteList = [];
         $this->logger = new NullLogger();
         $this->safeRequest = false;
+        $this->postAsMultipart = true;
     }
 
     private function hostPattern($pattern, $isRegexp)
@@ -206,5 +212,31 @@ class Options
     public function isSafeRequest()
     {
         return $this->safeRequest;
+    }
+
+    /**
+     * @return $this
+     */
+    public function postAsMultipart()
+    {
+        $this->postAsMultipart = true;
+        return $this;
+    }
+
+    /**
+     * @return $this
+     */
+    public function postAsUrlencoded()
+    {
+        $this->postAsMultipart = false;
+        return $this;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isPostAsMultipart()
+    {
+        return $this->postAsMultipart;
     }
 }
