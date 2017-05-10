@@ -36,19 +36,19 @@ class HeaderRequest
 
     public function setCookie($name, $value)
     {
-        $this->cookies[$name] = $value;
+        $this->cookies[(string)$name] = (string)$value;
         return $this;
     }
 
     public function setReferrer($referrer)
     {
-        $this->headers['referer'] = $referrer;
+        $this->headers['referer'] = (string)$referrer;
         return $this;
     }
 
     public function setUserAgent($userAgent)
     {
-        $this->headers['user-agent'] = $userAgent;
+        $this->headers['user-agent'] = (string)$userAgent;
         return $this;
     }
 

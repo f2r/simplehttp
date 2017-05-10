@@ -1,4 +1,4 @@
-# simplehttp
+# SimpleHTTP
 Simple HTTP client
 
 Simplehttp aims to be the simplest HTTP requesting library without breaking compatibility between two versions.
@@ -8,7 +8,7 @@ This is the end of conflicted versions like "guzzle syndrome".
 
 In addition, SimpleHttp comes with a "safeRequest" mode to protect from Server Side Request Forgery (SSRF).
 
-## GET request ##
+## GET request
 ```php
 <?php
 require 'vendor/autoload.php';
@@ -19,7 +19,7 @@ $response = $client->get('https://raw.githubusercontent.com/f2r/simplehttp/maste
 echo $response->getBody(), "\n";
 ```
 
-## POST, PUT, DELETE, HEAD requests ##
+## POST, PUT, DELETE, HEAD requests
 ```php
 <?php
 $client = new f2r\SimpleHttp\Client();
@@ -29,7 +29,7 @@ $client->delete('http://www.mysite.com/');
 $client->head('http://www.mysite.com/');
 ```
 
-## Upload a file ##
+## Upload a file
 ```php
 <?php
 $client = new f2r\SimpleHttp\Client();
@@ -41,14 +41,14 @@ $client->uploadFile('http//www.mysite.com/upload', [
 ]); // file in $_FILES['first'] and $_FILES['second'] 
 ```
 
-## Request header ##
+## Request header
 ```php
 <?php
 $client = new f2r\SimpleHttp\Client();
 $client->getHeader()->addField('x-custom', 'value');
 ```
 
-Injecting header object
+Injecting request header object
 ```php
 <?php
 $header = new \f2r\SimpleHttp\HeaderRequest();
@@ -60,14 +60,14 @@ $client = new f2r\SimpleHttp\Client($header);
 $client->getHeader()->addField('x-custom', 'value');
 ```
 
-## safeRequest ##
+## safeRequest
 ```php
 <?php
 $client = new f2r\SimpleHttp\Client();
 $client->getOptions()->setSafeRequest();
 ```
 
-black and white list
+Host black list
 
 ```php
 <?php
@@ -76,9 +76,33 @@ $options->addHostBlackList('unsafe.com');
 $client = new f2r\SimpleHttp\Client(null, $options);
 ```
 
+Host white list with a regular expression
+
 ```php
 <?php
 $options = new \f2r\SimpleHttp\Options();
 $options->addHostWhiteList('\.mysite\.com$', /* isRegexp */ true);
 $client = new f2r\SimpleHttp\Client(null, $options);
 ```
+Both "blacklist" and "whitelist" support regular expression matching
+
+## Options class reference
+
+- addHostBlackList(string|array $host, bool $isRegexp = false)
+- addHostWhiteList(string|array $host, bool $isRegexp = false)
+- postAsMultipart()
+- postAsUrlencoded()
+- setConnectionTimeout(int $timeout)
+- setFollowRedirectCount(int $followRedirectCount)
+- setLogger(LoggerInterface $logger)
+- setSafeRequest(bool $safe = true)
+- setTimeout(int $timeout)
+
+## HeaderRequest reference
+- __construct(array $headers = [], array $cookies = [])
+- addField(string $name, string $value)
+- setCookie(string $name, string $value)
+- setIfModifiedSince(\DateTime $dateTime)
+- setNoCache()
+- setReferrer(string $referrer)
+- setUserAgent(string $userAgent)

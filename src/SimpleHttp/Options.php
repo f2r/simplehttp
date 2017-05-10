@@ -89,8 +89,8 @@ class Options
     }
 
     /**
-     * @param      $host
-     * @param bool $isRegexp
+     * @param string|array  $host
+     * @param bool          $isRegexp
      * @return $this
      * @internal param array|string $regexp
      */
