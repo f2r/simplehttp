@@ -98,7 +98,7 @@ Both "blacklist" and "whitelist" support regular expression matching
 - setSafeRequest(bool $safe = true)
 - setTimeout(int $timeout)
 
-## HeaderRequest reference
+## HeaderRequest class reference
 - __construct(array $headers = [], array $cookies = [])
 - addField(string $name, string $value)
 - setCookie(string $name, string $value)
