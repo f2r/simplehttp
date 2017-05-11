@@ -2,9 +2,9 @@
 Simple HTTP client
 
 Simplehttp aims to be the simplest HTTP requesting library with strict forward compatibility. SimpleHTTP v2.0 will never exist !
-SimpleHTTP, however, may evolve (and will), and if an incompatible functionality is added, it will be created as an additional class or namespace.
+SimpleHTTP, however, may (and will) evolve, thus if any incompatible functionality is added, it will be created in an additional class or namespace.
 
-This is the end of conflicted versions like "guzzle dependency hell".
+It is a wish for the end of conflicted versions like "guzzle dependency hell".
 
 In addition, SimpleHttp comes with a Server Side Request Forgery protection (SSRF).
 
