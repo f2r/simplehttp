@@ -38,7 +38,7 @@ $client->uploadFile('http//www.mysite.com/upload', ['x-files' => '/path/to/file'
 $client->uploadFile('http//www.mysite.com/upload', [
     'first' => '/path/to/first-file',
     'second' => '/path/to/second-file'
-]); // file in $_FILES['first'] and $_FILES['second'] 
+]); // files in $_FILES['first'] and $_FILES['second'] 
 ```
 
 ## Request header
@@ -57,7 +57,7 @@ $header->setReferrer('http://previous');
 $header->setCookie('sid', '97dfa874fe00146');
 $header->setIfModifiedSince(new \DateTime('yesterday'));
 $client = new f2r\SimpleHttp\Client($header);
-$client->getHeader()->addField('x-custom', 'value');
+$client->get('http://www.mysite.com');
 ```
 
 ## Enable SSRF protection
@@ -65,6 +65,7 @@ $client->getHeader()->addField('x-custom', 'value');
 <?php
 $client = new f2r\SimpleHttp\Client();
 $client->getOptions()->enableSsrfProtection();
+$client->get($userWebSiteUrl);
 ```
 
 Host black list
