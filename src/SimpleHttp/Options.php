@@ -44,12 +44,12 @@ class Options
     /**
      * @var bool
      */
-    private $safeRequest;
+    private $ssrfProtection;
 
     /**
      * @var bool
      */
-    private $postAsMultipart;
+    private $postAsUrlEncoded;
 
     public function __construct()
     {
@@ -59,8 +59,8 @@ class Options
         $this->hostsBlackList = [];
         $this->hostsWhiteList = [];
         $this->logger = new NullLogger();
-        $this->safeRequest = false;
-        $this->postAsMultipart = true;
+        $this->ssrfProtection = false;
+        $this->postAsUrlEncoded = false;
     }
 
     private function hostPattern($pattern, $isRegexp)
@@ -197,46 +197,54 @@ class Options
     }
 
     /**
-     * @param bool $safe
      * @return $this
      */
-    public function setSafeRequest($safe = true)
+    public function enableSsrfProtection()
     {
-        $this->safeRequest = (bool)$safe;
+        $this->ssrfProtection = true;
+        return $this;
+    }
+
+    /**
+     * @return $this
+     */
+    public function disableSsrfProtection()
+    {
+        $this->ssrfProtection = false;
         return $this;
     }
 
     /**
      * @return bool
      */
-    public function isSafeRequest()
+    public function isSsrfProtected()
     {
-        return $this->safeRequest;
+        return $this->ssrfProtection;
     }
 
     /**
      * @return $this
      */
-    public function postAsMultipart()
+    public function enablePostAsUrlEncoded()
     {
-        $this->postAsMultipart = true;
+        $this->postAsUrlEncoded = true;
         return $this;
     }
 
     /**
      * @return $this
      */
-    public function postAsUrlencoded()
+    public function disablePostAsUrlEncoded()
     {
-        $this->postAsMultipart = false;
+        $this->postAsUrlEncoded = false;
         return $this;
     }
 
     /**
      * @return bool
      */
-    public function isPostAsMultipart()
+    public function isPostAsUrlEncoded()
     {
-        return $this->postAsMultipart;
+        return $this->postAsUrlEncoded;
     }
 }

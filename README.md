@@ -1,12 +1,12 @@
 # SimpleHTTP
 Simple HTTP client
 
-Simplehttp aims to be the simplest HTTP requesting library without breaking compatibility between two versions.
-If an incompatible functionality is added, it will be created as an additional class or namespace.
+Simplehttp aims to be the simplest HTTP requesting library with strict forward compatibility. SimpleHTTP v2.0 will never exist !
+SimpleHTTP, however, may evolve (and will), and if an incompatible functionality is added, it will be created as an additional class or namespace.
 
-This is the end of conflicted versions like "guzzle syndrome".
+This is the end of conflicted versions like "guzzle dependency hell".
 
-In addition, SimpleHttp comes with a "safeRequest" mode to protect from Server Side Request Forgery (SSRF).
+In addition, SimpleHttp comes with a Server Side Request Forgery protection (SSRF).
 
 ## GET request
 ```php
@@ -60,11 +60,11 @@ $client = new f2r\SimpleHttp\Client($header);
 $client->getHeader()->addField('x-custom', 'value');
 ```
 
-## safeRequest
+## Enable SSRF protection
 ```php
 <?php
 $client = new f2r\SimpleHttp\Client();
-$client->getOptions()->setSafeRequest();
+$client->getOptions()->enableSsrfProtection();
 ```
 
 Host black list
@@ -90,13 +90,14 @@ Both "blacklist" and "whitelist" support regular expression matching
 
 - addHostBlackList(string|array $host, bool $isRegexp = false)
 - addHostWhiteList(string|array $host, bool $isRegexp = false)
-- postAsMultipart()
-- postAsUrlencoded()
 - setConnectionTimeout(int $timeout)
+- setTimeout(int $timeout)
 - setFollowRedirectCount(int $followRedirectCount)
 - setLogger(LoggerInterface $logger)
-- setSafeRequest(bool $safe = true)
-- setTimeout(int $timeout)
+- enableSsrfProtection()
+- disableSsrfProtection()
+- enablePostAsUrlEncoded()
+- disablePostAsUrlEncoded()
 
 ## HeaderRequest class reference
 - __construct(array $headers = [], array $cookies = [])

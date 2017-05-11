@@ -294,11 +294,11 @@ class Client
 
     /**
      * @param $ch
-     * @throws \f2r\SimpleHttp\Exception\SafeRequestException
+     * @throws \f2r\SimpleHttp\Exception\SsrfException
      */
     private function throwOnUnsafeRequest($ch)
     {
-        if ($this->options->isSafeRequest() === false) {
+        if ($this->options->isSsrfProtected() === false) {
             return;
         }
         curl_setopt($ch, CURLOPT_CONNECT_ONLY, true);
@@ -307,16 +307,16 @@ class Client
         $ip = preg_replace('`(?<=^|:)0+(?=:|$)`', '', $ip);
         try {
             if (stripos($ip, 'fd') === 0) {
-                throw new Exception\SafeRequestException('Private IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+                throw new Exception\SsrfException('Private IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
             }
             if (stripos($ip, 'fc') === 0) {
-                throw new Exception\SafeRequestException('Local IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+                throw new Exception\SsrfException('Local IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
             }
             if (stripos($ip, 'fe80') === 0) {
-                throw new Exception\SafeRequestException('Local link IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+                throw new Exception\SsrfException('Local link IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
             }
             if ($ip === '::1') {
-                throw new Exception\SafeRequestException('Loop back IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+                throw new Exception\SsrfException('Loop back IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
             }
 
             $ipv6Message = '';
@@ -333,10 +333,10 @@ class Client
                 $ipv6Message = ' mapped into IPV6';
             }
             if (preg_match('`^(10|192\.168|172\.1[6-9]|172\.2\d|172\.3[0-1])\.`', $ip)) {
-                throw new Exception\SafeRequestException("Private IPV4 network requested$ipv6Message: " . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+                throw new Exception\SsrfException("Private IPV4 network requested$ipv6Message: " . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
             }
             if (strpos($ip, '127.') === 0) {
-                throw new Exception\SafeRequestException("Local IPV4 network requested$ipv6Message: " . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+                throw new Exception\SsrfException("Local IPV4 network requested$ipv6Message: " . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
             }
         } finally {
             curl_setopt($ch, CURLOPT_CONNECT_ONLY, false);
@@ -379,7 +379,7 @@ class Client
 
     private function buildData($data)
     {
-        if (is_array($data) and $this->options->isPostAsMultipart()) {
+        if (is_array($data) and $this->options->isPostAsUrlEncoded() === false) {
             return $data;
         }
         if (is_array($data)) {
