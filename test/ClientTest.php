@@ -182,8 +182,6 @@ class ClientTest extends \PHPUnit_Framework_TestCase
     {
         $this->setExpectedException('f2r\SimpleHttp\Exception\ForbiddenProtocolException');
         $this->client->get('ftp://localhost');
-        //$this->redirect = 'ftp://localhost';
-        $this->client->get('http://test');
     }
 
     public function testProtocolOnRedirect()
