@@ -1,10 +1,10 @@
 <?php
 require 'vendor/autoload.php';
 
-$url = 'http://[::ffff:7f00:1]/';
+$url = 'http://localhost/test.html';
 
 $client = new f2r\SimpleHttp\Client();
-$client->getOptions()->setSafeRequest();
+
 try {
     $response = $client->get($url);
 } catch (Exception $e) {
@@ -12,3 +12,4 @@ try {
 }
 
 echo "URL $url requested. HTTP code: ", $response->getHttpCode(), "\n";
+echo $response->getBody();

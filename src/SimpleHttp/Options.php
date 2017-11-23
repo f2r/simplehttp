@@ -10,6 +10,7 @@ class Options
     const DEFAULT_CONNECTION_TIMEOUT = 10;
     const DEFAULT_TIMEOUT = 30;
     const DEFAULT_FOLLOW_REDIRECT_COUNT = 10;
+    const DEFAULT_ASYNC_WAIT_DELAY = 1000;
 
     /**
      * @var int
@@ -51,6 +52,12 @@ class Options
      */
     private $postAsUrlEncoded;
 
+    private $asynchronousRequest;
+    /**
+     * @var int delay for next async reading in microseconds
+     */
+    private $asyncWaitDelay;
+
     public function __construct()
     {
         $this->connectionTimeout = static::DEFAULT_CONNECTION_TIMEOUT;
@@ -61,17 +68,8 @@ class Options
         $this->logger = new NullLogger();
         $this->ssrfProtection = false;
         $this->postAsUrlEncoded = false;
-    }
-
-    private function hostPattern($pattern, $isRegexp)
-    {
-        if ($isRegexp === false) {
-            $pattern = '`^' . preg_quote($pattern, '`') . '$`i';
-        }
-        if (@preg_match($pattern, '') === false) {
-            throw new HostPatternException('Regexp pattern error: ' . $pattern);
-        }
-        return $pattern;
+        $this->asynchronousRequest = false;
+        $this->asyncWaitDelay = self::DEFAULT_ASYNC_WAIT_DELAY;
     }
 
     /**
@@ -86,6 +84,17 @@ class Options
             $this->hostsWhiteList[] = $this->hostPattern($pattern, $isRegexp);
         }
         return $this;
+    }
+
+    private function hostPattern($pattern, $isRegexp)
+    {
+        if ($isRegexp === false) {
+            $pattern = '`^' . preg_quote($pattern, '`') . '$`i';
+        }
+        if (@preg_match($pattern, '') === false) {
+            throw new HostPatternException('Regexp pattern error: ' . $pattern);
+        }
+        return $pattern;
     }
 
     /**
@@ -124,6 +133,11 @@ class Options
         return false;
     }
 
+    public function hasHostFiltering()
+    {
+        return $this->hostsBlackList === [] and $this->hostsWhiteList === [];
+    }
+
     /**
      * @return int
      */
@@ -143,6 +157,14 @@ class Options
     }
 
     /**
+     * @return int
+     */
+    public function getConnectionTimeout()
+    {
+        return $this->connectionTimeout;
+    }
+
+    /**
      * @param int $timeout Timeout in seconds
      * @return $this
      */
@@ -155,9 +177,9 @@ class Options
     /**
      * @return int
      */
-    public function getConnectionTimeout()
+    public function getTimeout()
     {
-        return $this->connectionTimeout;
+        return $this->timeout;
     }
 
     /**
@@ -171,11 +193,11 @@ class Options
     }
 
     /**
-     * @return int
+     * @return \Psr\Log\LoggerInterface
      */
-    public function getTimeout()
+    public function getLogger()
     {
-        return $this->timeout;
+        return $this->logger;
     }
 
     /**
@@ -186,14 +208,6 @@ class Options
     {
         $this->logger = $logger;
         return $this;
-    }
-
-    /**
-     * @return \Psr\Log\LoggerInterface
-     */
-    public function getLogger()
-    {
-        return $this->logger;
     }
 
     /**
@@ -246,5 +260,48 @@ class Options
     public function isPostAsUrlEncoded()
     {
         return $this->postAsUrlEncoded;
+    }
+
+    public function getCurlOptions()
+    {
+        return [
+            CURLOPT_TIMEOUT => $this->timeout,
+            CURLOPT_CONNECTTIMEOUT => $this->connectionTimeout,
+        ];
+    }
+
+    public function enableAsynchronousRequest()
+    {
+        $this->asynchronousRequest = true;
+        return $this;
+    }
+
+    public function disableAsynchronousRequest()
+    {
+        $this->asynchronousRequest = false;
+        return $this;
+    }
+
+    public function isAsynchronousRequesting()
+    {
+        return $this->asynchronousRequest;
+    }
+
+    /**
+     * @param int $utime
+     * @return $this
+     */
+    public function setAsyncWaitDelay($utime)
+    {
+        $this->asyncWaitDelay = $utime;
+        return $this;
+    }
+
+    /**
+     * @return int
+     */
+    public function getAsyncWaitDelay()
+    {
+        return $this->asyncWaitDelay;
     }
 }
