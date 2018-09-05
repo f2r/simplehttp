@@ -1,7 +1,7 @@
 <?php
 namespace f2r\SimpleHttp;
 
-class HeaderResponse
+class HeaderResponse implements \Serializable
 {
     private $header;
 
@@ -10,11 +10,33 @@ class HeaderResponse
         $this->header = $header;
     }
 
+    public function getHttpCode(): int
+    {
+        return $this->header['http']['code'] ?? null;
+    }
+
+    public function getHttpMessage(): string
+    {
+        return $this->header['http']['message'] ?? null;
+    }
+
     public function get($name)
     {
-        if (isset($this->header[$name])) {
-            return $this->header[$name];
-        }
-        return null;
+        return $this->header[$name] ?? null;
+    }
+
+    public function getAll()
+    {
+        return $this->header;
+    }
+
+    public function serialize()
+    {
+        return \serialize($this->header);
+    }
+
+    public function unserialize($serialized)
+    {
+        $this->header = \unserialize($serialized);
     }
 }

@@ -4,9 +4,19 @@ namespace f2r\SimpleHttp;
 class Response
 {
     /**
-     * @var \f2r\SimpleHttp\CurlInfo
+     * @var string
      */
-    private $curlInfo;
+    private $url;
+
+    /**
+     * @var string
+     */
+    private $effectiveUrl;
+
+    /**
+     * @var Redirections
+     */
+    private $redirected;
 
     /**
      * @var \f2r\SimpleHttp\HeaderResponse
@@ -18,31 +28,50 @@ class Response
      */
     private $body;
 
-    public function __construct(HeaderResponse $header, $body, CurlInfo $curlInfo)
+    public function __construct(string $url, HeaderResponse $header, string $body)
     {
-        $this->curlInfo = $curlInfo;
+        $this->url = $url;
+        $this->effectiveUrl = $url;
+        $this->redirected = null;
+
         $this->header = $header;
         $this->body = $body;
     }
 
-    public function getCurlInfo()
+    public function setEffectiveUrl(string $url)
     {
-        return $this->curlInfo;
+        $this->effectiveUrl = $url;
+        return $this;
     }
 
-    public function getHttpCode()
+    public function setRedirected(Redirections $redirected)
     {
-        return (int)$this->curlInfo->getHttpCode();
+        $this->redirected = $redirected;
+        return $this;
+    }
+
+    public function hasRedirection()
+    {
+        if ($this->redirected === null) {
+            return false;
+        }
+
+        return count($this->redirected) > 0;
+    }
+
+    public function getRedirections()
+    {
+        return $this->redirected;
     }
 
     public function getUrl()
     {
-        return $this->curlInfo->getUrl();
+        return $this->url;
     }
 
-    public function getContenType()
+    public function getEffectiveUrl()
     {
-        return $this->curlInfo->getContentType();
+        return $this->effectiveUrl;
     }
 
     public function getHeader()

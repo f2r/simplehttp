@@ -1,6 +1,18 @@
 <?php
 namespace f2r\SimpleHttp;
 
+
+use f2r\SimpleHttp\Exception\ForbiddenProtocolException;
+use f2r\SimpleHttp\Exception\HttpMethodNotSupportedException;
+use f2r\SimpleHttp\Exception\InvalidCharacterException;
+use f2r\SimpleHttp\FeaturePoint\EndRequest;
+use f2r\SimpleHttp\FeaturePoint\Error;
+use f2r\SimpleHttp\FeaturePoint\FollowLocation;
+use f2r\SimpleHttp\FeaturePoint\ProcessingBody;
+use f2r\SimpleHttp\FeaturePoint\ProcessingHeader;
+use f2r\SimpleHttp\FeaturePoint\SettingCurlOptions;
+use f2r\SimpleHttp\FeaturePoint\StartRequest;
+
 class Client
 {
     const METHOD_GET = 'GET';
@@ -8,6 +20,11 @@ class Client
     const METHOD_PUT = 'PUT';
     const METHOD_DELETE = 'DELETE';
     const METHOD_HEAD = 'HEAD';
+
+    /**
+     * @var callable[][]
+     */
+    private $featurePoints;
 
     /**
      * @var HeaderRequest
@@ -20,54 +37,37 @@ class Client
     private $options;
 
     /**
-     * Used for testing mode : all client requests will use this callable. If callable does not return a Response object
-     * Curl request is executed
-     *
-     * @var callable
+     * @var array
      */
-    protected static $debugHook;
+    private $lastResponseHeader;
 
     /**
-     * @param callable|null $debugHook
+     * @var Redirections
      */
-    public static function setDebugHook(callable $debugHook = null)
-    {
-        static::$debugHook = $debugHook;
-    }
+    private $redirected;
 
+    /**
+     * @var string Keep base URL for relative URL redirection
+     */
+    private $redirectBaseUrl;
+
+    /**
+     * @param HeaderRequest|null $header
+     * @param Options|null $options
+     */
     public function __construct(HeaderRequest $header = null, Options $options = null)
     {
+        $this->featurePoints = [
+            StartRequest::class => [],
+            FollowLocation::class => [],
+            SettingCurlOptions::class => [],
+            ProcessingHeader::class => [],
+            ProcessingBody::class => [],
+            Error::class => [],
+            EndRequest::class => [],
+        ];
         $this->setHeader($header);
         $this->setOptions($options);
-    }
-
-    /**
-     * @return \f2r\SimpleHttp\Options
-     */
-    public function getOptions()
-    {
-        return $this->options;
-    }
-
-    /**
-     * @param \f2r\SimpleHttp\Options|null $options
-     * @return $this
-     */
-    public function setOptions(Options $options = null)
-    {
-        if ($options === null) {
-            $options = new Options();
-        }
-        $this->options = $options;
-        return $this;
-    }
-
-    /**
-     * @return \f2r\SimpleHttp\HeaderRequest
-     */
-    public function getHeader()
-    {
-        return $this->header;
     }
 
     /**
@@ -84,55 +84,126 @@ class Client
     }
 
     /**
-     * @param string                             $method
-     * @param string                            $url
-     * @param array|string|null $data
-     * @return \f2r\SimpleHttp\Response
+     * @param Options $options
      *
+     * @return $this
+     */
+    public function setOptions(Options $options = null)
+    {
+        if ($options === null) {
+            $options = new Options();
+        }
+        $this->options = $options;
+        return $this;
+    }
+
+    /**
+     * Use a feature for this client.
+     *
+     * @param FeaturePoint $feature
+     *
+     * @return $this
+     */
+    public function with(FeaturePoint $feature)
+    {
+        foreach (class_implements($feature) as $name) {
+            if (is_subclass_of($name, FeaturePoint::class)) {
+                $this->featurePoints[$name][] = $feature;
+            }
+        }
+        return $this;
+    }
+
+    /**
+     * @param string $method
+     * @param string $url
+     * @param array|null $data
+     *
+     * @return Response
      * @throws Exception
      */
-    public function request($method, $url, $data = null)
+    public function request(string $method, string $url, array $data = null): Response
     {
-        $curlOpt = [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLINFO_HEADER_OUT => false,
-            CURLOPT_TIMEOUT => $this->options->getTimeout(),
-            CURLOPT_CONNECTTIMEOUT => $this->options->getConnectionTimeout(),
-            CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_HTTPHEADER => $this->header->getHeaders(),
-            CURLOPT_HEADER => true
-        ];
-
-        switch ($method) {
-            case self::METHOD_DELETE:
-                $curlOpt[CURLOPT_CUSTOMREQUEST] = self::METHOD_DELETE;
-                $data = null;
-                break;
-            case self::METHOD_HEAD:
-                $curlOpt[CURLOPT_CUSTOMREQUEST] = self::METHOD_HEAD;
-                $data = null;
-                break;
-            case self::METHOD_GET:
-                $data = null;
-                break;
-            case self::METHOD_PUT:
-                $curlOpt[CURLOPT_CUSTOMREQUEST] = self::METHOD_PUT;
-                $curlOpt[CURLOPT_SAFE_UPLOAD] = true;
-                if (is_array($data)) {
-                    $data = http_build_query($data);
-                }
-                $curlOpt[CURLOPT_POSTFIELDS] = (string)$data;
-                break;
-            case self::METHOD_POST:
-                $curlOpt[CURLOPT_SAFE_UPLOAD] = true;
-                $curlOpt[CURLOPT_POST] = true;
-                $curlOpt[CURLOPT_POSTFIELDS] = $this->buildData($data);
-                break;
-            default:
-                throw new Exception\HttpMethodNotSupportedException($method . ' HTTP method is not currently supported');
+        $this->redirectBaseUrl = $this->getBaseUrl($url);
+        $this->redirected = new Redirections($url);
+        $this->checkUrl($url);
+        /** @var StartRequest $feature */
+        foreach ($this->featurePoints[StartRequest::class] as $feature) {
+            $response = $feature->onRequest($method, $url, $data);
+            if ($response !== null) {
+                return $response;
+            }
         }
 
-        return $this->executeCurl($url, $curlOpt);
+        $this->lastResponseHeader = [];
+        $ch = \curl_init();
+
+        $curlOptions = $this->getCurlOptions($method, $url, $data);
+
+        $curlOptions[CURLOPT_HEADERFUNCTION] = function($ch, $str) {
+            $this->handleResponseHeader($ch, $str);
+            return strlen($str);
+        };
+
+        /** @var SettingCurlOptions $feature */
+        foreach ($this->featurePoints[SettingCurlOptions::class] as $feature) {
+            $curlOptions = $feature->onSettingCurlOptions($ch, $curlOptions);
+        }
+        \curl_setopt_array($ch, $curlOptions);
+
+        $curlInfo = [];
+        $body = '';
+        try {
+            $body = @\curl_exec($ch);
+            $curlInfo = \curl_getinfo($ch);
+            $error = \curl_error($ch);
+            $code = $curlInfo['http_code'];
+            if ($code >= 400 or $code === 0) {
+                if ($error === '') {
+                    if (isset($this->lastResponseHeader['http']['message'])) {
+                        $error = $this->lastResponseHeader['http']['code'] . ': ';
+                        $error .= $this->lastResponseHeader['http']['message'];
+                    } else {
+                        $error = 'Request return an error: ' . $code;
+                    }
+                }
+                throw new Exception($error, $code);
+            }
+            /** @var ProcessingHeader $feature */
+            foreach ($this->featurePoints[ProcessingHeader::class] as $feature) {
+                $this->lastResponseHeader = $feature->onProcessingHeader($ch, $curlInfo, $this->lastResponseHeader, $this->redirected);
+            }
+            /** @var ProcessingBody $feature */
+            foreach ($this->featurePoints[ProcessingBody::class] as $feature) {
+                $body = $feature->onProcessingBody($ch, $curlInfo, $this->lastResponseHeader, $body, $this->redirected);
+            }
+        } catch (Exception $exception) {
+            // No feature for error, just throws the exception
+            if ($this->featurePoints[Error::class] === []) {
+                throw $exception;
+            }
+            /** @var Error $feature */
+            foreach ($this->featurePoints[Error::class] as $feature) {
+                $feature->onError($ch, $curlInfo, $exception, $this->redirected);
+            }
+        } finally {
+            \curl_close($ch);
+        }
+
+        /** @var EndRequest $feature */
+        foreach ($this->featurePoints[EndRequest::class] as $feature) {
+            $response = $feature->onResponse($curlInfo, $this->lastResponseHeader, $body, $this->redirected);
+            if ($response !== null) {
+                return $response;
+            }
+        }
+
+        $response = new Response($url, new HeaderResponse($this->lastResponseHeader), $body);
+        $response->setEffectiveUrl($curlInfo['url']);
+        if (count($this->redirected) > 0) {
+            $response->setRedirected($this->redirected);
+        }
+        return $response;
     }
 
     /**
@@ -215,168 +286,115 @@ class Client
         return $this->request(self::METHOD_POST, $url, $files + $additionalData);
     }
 
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////// Private methods /////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
     /**
-     * @param string $error
-     * @param string $raw
-     * @throws \f2r\SimpleHttp\Exception, \f2r\SimpleHttp\Exception\HttpErrorException
+     * When CURL receive a header line, store it and if it's a redirection, use FollowLocation feature point
+     *
+     * @param resource $curlHandle
+     * @param string $string
+     *
+     * @throws ForbiddenProtocolException
+     * @throws InvalidCharacterException
      */
-    private function throwOnError($error, $raw, $url)
+    private function handleResponseHeader($curlHandle, string $string)
     {
-        if ($error !== '') {
-            $this->getOptions()->getLogger()->debug('Error requesting "' . $url . '": ' . $error);
-            throw new Exception\UnknownHttpErrorException($error);
-        }
-
-        if (preg_match('`^HTTP/\d+\.\d+\s+(\d+)\s+(.+)`', $raw, $match) === 0) {
-            $this->getOptions()->getLogger()->debug('Could not understand HTTP response for URL: ' . $url);
-            throw new Exception\UnknownHttpErrorException('Could not understand HTTP response');
-        }
-
-        $httpCode = (int)$match[1];
-        $httpMessage = trim($match[2]);
-
-        if ($httpCode < 400) {
+        if (trim($string) === '') {
             return;
         }
+        $value = null;
+        if (preg_match('`^HTTP/([0-9.]+)\s+([0-9]+)\s+(.*)`', $string, $match) === 1) {
+            $this->lastResponseHeader = [];
+            $name = 'http';
+            $value = ['version' => $match[1], 'code' => (int) $match[2], 'message' => trim($match[3])];
+        } else {
+            preg_match('`^([^:]+)\s*:\s*(.*)$`', $string, $match);
+            $name = strtolower($match[1]);
+            $value = trim($match[2]);
+        }
 
-        $this->getOptions()->getLogger()->debug("Request error for URL \"$url\": [$httpCode] $httpMessage");
-        throw new Exception\HttpErrorException($httpMessage, $httpCode);
+        if (isset($this->lastResponseHeader[$name])) {
+            if (is_array($this->lastResponseHeader[$name])) {
+                $this->lastResponseHeader[$name][] = $value;
+            } else {
+                $this->lastResponseHeader[$name] = [$this->lastResponseHeader[$name], $value];
+            }
+        } else {
+            $this->lastResponseHeader[$name] = $value;
+        }
+
+        if ($name === 'location') {
+            $data = parse_url($value);
+            if (!isset($data['host'])) {
+                $value = $this->redirectBaseUrl . $value;
+            }
+            $this->redirectBaseUrl = $this->getBaseUrl($value);
+            $this->checkUrl($value);
+            $this->redirected->addRedirect(new RedirectUrl($this->lastResponseHeader['http']['code'], $value));
+            /** @var FollowLocation $feature */
+            foreach ($this->featurePoints[FollowLocation::class] as $feature) {
+                $feature->onFollowLocation($this, $curlHandle, $value);
+            }
+        }
     }
 
     /**
+     * Check URL for invalid protocol or characters
+     *
      * @param string $url
-     * @param array  $curlOpt
-     * @return Response
-     * @throws Exception
+     *
+     * @throws ForbiddenProtocolException
+     * @throws InvalidCharacterException
      */
-    private function executeCurl($url, array $curlOpt)
+    private function checkUrl(string $url): void
     {
-        $response = null;
-        if (static::$debugHook !== null) {
-            $response = call_user_func(static::$debugHook, $url, $curlOpt);
+        $data = parse_url($url);
+        if (isset($data['scheme']) === false) {
+            throw new ForbiddenProtocolException('No protocol specified: ' . $url);
         }
 
-        if ($response !== null) {
-            return $response;
+        if (in_array(strtolower($data['scheme']), ['http', 'https']) === false) {
+            throw new ForbiddenProtocolException('Unsupported protocol scheme: ' . $url);
         }
 
-        $originalUrl = $url;
-        $logger = $this->getOptions()->getLogger();
-        $logMessage = 'Request URL: ';
-        $redirectCount = $this->options->getFollowRedirectCount();
-        $ch = curl_init();
-        curl_setopt_array($ch, $curlOpt);
-        do {
-            $this->throwOnForbiddenProtocol($url);
-            $this->throwOnForbiddenHost($url);
-            $this->throwOnInvalidCharacter($url);
-            curl_setopt($ch, CURLOPT_URL, $url);
-            $logger->debug($logMessage . $url);
-            $this->throwOnUnsafeRequest($ch);
-            $raw = curl_exec($ch);
-            $info = curl_getinfo($ch);
-            $error = curl_error($ch);
-            // remove "continue" header
-            $raw = preg_replace('`^HTTP/\d+\.\d+\s+100\s+.*\s+`m', '', $raw);
-            $this->throwOnError($error, $raw, $url);
-            $url = $info['redirect_url'];
-            $logMessage = 'Redirect URL: ';
-        } while ($url !== '' and $redirectCount-- > 0);
-        curl_close($ch);
-
-        if ($url !== '' and $redirectCount <= 0) {
-            throw new Exception\TooManyRedirectionsException(
-                'Too many redirections (max ' . $this->options->getFollowRedirectCount() . ') for URL: ' . $originalUrl
-            );
-        }
-        return $this->processHeaderBody($raw, $info);
-    }
-
-    /**
-     * @param $ch
-     * @throws \f2r\SimpleHttp\Exception\SsrfException
-     */
-    private function throwOnUnsafeRequest($ch)
-    {
-        if ($this->options->isSsrfProtected() === false) {
-            return;
-        }
-        curl_setopt($ch, CURLOPT_CONNECT_ONLY, true);
-        curl_exec($ch);
-        $ip = curl_getinfo($ch, CURLINFO_PRIMARY_IP);
-        $ip = preg_replace('`(?<=^|:)0+(?=:|$)`', '', $ip);
-        try {
-            if (stripos($ip, 'fd') === 0) {
-                throw new Exception\SsrfException('Private IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
-            }
-            if (stripos($ip, 'fc') === 0) {
-                throw new Exception\SsrfException('Local IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
-            }
-            if (stripos($ip, 'fe80') === 0) {
-                throw new Exception\SsrfException('Local link IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
-            }
-            if ($ip === '::1') {
-                throw new Exception\SsrfException('Loop back IPV6 network requested: ' . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
-            }
-
-            $ipv6Message = '';
-            if (preg_match('`^::ffff:([^:]+):([^:]+)`', $ip, $match) === 1) {
-                $parts = str_split(str_pad($match[1], 4, '0', STR_PAD_LEFT) . str_pad($match[2], 4, '0', STR_PAD_LEFT), 2);
-                foreach ($parts as $i => $h) {
-                    $parts[$i] = base_convert($h, 16, 10);
-                }
-                $ip = implode('.', $parts);
-                $ipv6Message = ' mapped into IPV6';
-            }
-            if (preg_match('`^::ffff:(\d+\.\d+\.\d+\.\d+)`', $ip, $match) === 1) {
-                $ip = $match[1];
-                $ipv6Message = ' mapped into IPV6';
-            }
-            if (preg_match('`^(10|192\.168|172\.1[6-9]|172\.2\d|172\.3[0-1])\.`', $ip)) {
-                throw new Exception\SsrfException("Private IPV4 network requested$ipv6Message: " . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
-            }
-            if (strpos($ip, '127.') === 0) {
-                throw new Exception\SsrfException("Local IPV4 network requested$ipv6Message: " . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
-            }
-        } finally {
-            curl_setopt($ch, CURLOPT_CONNECT_ONLY, false);
-        }
-    }
-
-    /**
-     * @param string $url
-     * @throws \f2r\SimpleHttp\Exception\ForbiddenProtocolException
-     */
-    private function throwOnForbiddenProtocol($url)
-    {
-        if (preg_match('`^https?://`i', $url) === 0) {
-            throw new Exception\ForbiddenProtocolException('unsupported protocol scheme: ' . $url);
-        }
-    }
-
-    /**
-     * @param string $url
-     * @throws \f2r\SimpleHttp\Exception\ForbiddenHostException
-     */
-    private function throwOnForbiddenHost($url)
-    {
-        $host = parse_url($url, PHP_URL_HOST);
-        if ($this->options->isHostValid($host) === false) {
-            throw new Exception\ForbiddenHostException('Invalid host for requesting: ' . $host, 0);
+        if (preg_match('`[\x00-\x20\x22\x3c\x3e\x5c\x5e\x60\x7b-\x7d\x7f-\xff]`', $url, $match) === 1) {
+            throw new InvalidCharacterException(sprintf('Invalid character in URL: \\x%02X', ord($match[0])));
         }
     }
 
     /**
      * @param $url
-     * @throws \f2r\SimpleHttp\Exception\InvalidCharacterException
+     *
+     * @return string
      */
-    private function throwOnInvalidCharacter($url)
+    private function getBaseUrl(string $url): string
     {
-        if (preg_match('`[\x00-\x20\x22\x3c\x3e\x5c\x5e\x60\x7b-\x7d\x7f-\xff]`', $url, $match) === 1) {
-            throw new Exception\InvalidCharacterException(sprintf('Invalid character in URL: \\x%02X', ord($match[0])));
+        $parts = parse_url($url);
+        $baseUrl = "{$parts['scheme']}://";
+        if (isset($parts['username'])) {
+            $baseUrl .= $parts['username'];
         }
+        if (isset($parts['username'], $parts['password'])) {
+            $baseUrl .= ':' . $parts['password'];
+        }
+        if (isset($parts['username'])) {
+            $baseUrl .= '@';
+        }
+        $baseUrl .= $parts['host'];
+        if (isset($parts['port'])) {
+            $baseUrl .= ':' . $parts['port'];
+        }
+
+        return $baseUrl;
     }
 
+    /**
+     * @param mixed $data
+     *
+     * @return string
+     */
     private function buildData($data)
     {
         if (is_array($data) and $this->options->isPostAsUrlEncoded() === false) {
@@ -386,33 +404,58 @@ class Client
             return http_build_query($data);
         }
 
-        return (string)$data;
+        return (string) $data;
     }
 
     /**
-     * @param string $raw
-     * @param array  $info
-     * @return \f2r\SimpleHttp\Response
+     * @param string $method
+     * @param string $url
+     * @param array|null $data
+     *
+     * @return array
+     * @throws HttpMethodNotSupportedException
      */
-    private function processHeaderBody($raw, array $info)
+    private function getCurlOptions(string $method, string $url, array $data = null): array
     {
-        $split = explode("\r\n\r\n", $raw, 2);
-        $header = $split[0];
-        $body = '';
-        if (isset($split[1])) {
-            $body = $split[1];
+        $curlOptions = [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLINFO_HEADER_OUT => false,
+            CURLOPT_TIMEOUT => $this->options->getTimeout(),
+            CURLOPT_CONNECTTIMEOUT => $this->options->getConnectionTimeout(),
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => $this->options->getFollowRedirectCount(),
+            CURLOPT_HTTPHEADER => $this->header->getHeaders(),
+            CURLOPT_HEADER => false,
+            CURLOPT_NOSIGNAL => true,
+        ];
+        if ($this->options->getFollowRedirectCount())
+        switch ($method) {
+            case self::METHOD_DELETE:
+                $curlOptions[CURLOPT_CUSTOMREQUEST] = self::METHOD_DELETE;
+                break;
+            case self::METHOD_HEAD:
+                $curlOptions[CURLOPT_CUSTOMREQUEST] = self::METHOD_HEAD;
+                break;
+            case self::METHOD_GET:
+                break;
+            case self::METHOD_PUT:
+                $curlOptions[CURLOPT_CUSTOMREQUEST] = self::METHOD_PUT;
+                $curlOptions[CURLOPT_SAFE_UPLOAD] = true;
+                if (is_array($data)) {
+                    $data = http_build_query($data);
+                }
+                $curlOptions[CURLOPT_POSTFIELDS] = (string)$data;
+                break;
+            case self::METHOD_POST:
+                $curlOptions[CURLOPT_SAFE_UPLOAD] = true;
+                $curlOptions[CURLOPT_POST] = true;
+                $curlOptions[CURLOPT_POSTFIELDS] = $this->buildData($data);
+                break;
+            default:
+                throw new HttpMethodNotSupportedException($method . ' HTTP method is not currently supported');
         }
-        $headerLines = explode("\r\n", trim($header));
-        unset($headerLines[0]);
-        $header = [];
-        foreach ($headerLines as $line) {
-            list($key, $value) = explode(':', $line, 2);
-            $header[strtolower(trim($key))] = trim($value);
-        }
-        return new Response(
-            new HeaderResponse($header),
-            $body,
-            new CurlInfo($info)
-        );
+
+        return $curlOptions;
     }
 }

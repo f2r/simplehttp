@@ -1,6 +1,6 @@
 <?php
 
-class HeaderRequestTest extends PHPUnit_Framework_TestCase
+class HeaderRequestTest extends \PHPUnit\Framework\TestCase
 {
     public function testEmpty()
     {
